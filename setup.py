@@ -26,4 +26,5 @@ setup(
         'console_scripts': [
         ],
     },
+    tests_require=['pytest'],
 )
