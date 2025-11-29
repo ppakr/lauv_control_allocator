@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'lauv_control_allocator_node = lauv_control_allocator.lauv_control_allocator:main',
         ],
     },
     tests_require=['pytest'],
