@@ -1,5 +1,5 @@
 import casadi as ca
-from geometry_msgs.msg import Wrench
+from geometry_msgs.msg import WrenchStamped
 from nav_msgs.msg import Odometry
 import numpy as np
 import rclpy
@@ -89,7 +89,7 @@ class LAUVControlAllocator(Node):
 
         # --- 4. ROS Subscriptions ---
         self.wrench_sub = self.create_subscription(
-            Wrench, "/lauv/wrench_command", self.wrench_callback, 10
+            WrenchStamped, "/lauv/wrench_command", self.wrench_callback, 10
         )
 
         self.odom_sub = self.create_subscription(
@@ -142,7 +142,12 @@ class LAUVControlAllocator(Node):
         error = total_wrench - tau_des
         cost = ca.mtimes([error.T, W, error]) + ca.mtimes([self.u.T, R_reg, self.u])
 
-        nlp = {"x": self.u, "p": self.p, "f": cost}
+        # g(u) = 0
+        # 1. Fin0 + Fin2 = 0  => Fin2 = -Fin0
+        # 2. Fin1 + Fin3 = 0  => Fin3 = -Fin1
+        g = ca.vertcat(self.u[0] + self.u[2], self.u[1] + self.u[3])
+
+        nlp = {"x": self.u, "p": self.p, "f": cost, "g": g}
         opts = {"ipopt.print_level": 0, "print_time": 0, "ipopt.sb": "yes"}
         self.solver = ca.nlpsol("S", "ipopt", nlp, opts)
 
@@ -150,12 +155,12 @@ class LAUVControlAllocator(Node):
         """Store the desired Wrench (Force/Torque)."""
         self.target_wrench = np.array(
             [
-                msg.force.x,
-                msg.force.y,
-                msg.force.z,
-                msg.torque.x,
-                msg.torque.y,
-                msg.torque.z,
+                msg.wrench.force.x,
+                msg.wrench.force.y,
+                msg.wrench.force.z,
+                msg.wrench.torque.x,
+                msg.wrench.torque.y,
+                msg.wrench.torque.z,
             ]
         )
 
@@ -174,11 +179,15 @@ class LAUVControlAllocator(Node):
         # Constraints (Bounds)
         lbx = [-self.max_fin_angle] * 4 + [self.min_thrust]
         ubx = [self.max_fin_angle] * 4 + [self.max_thrust]
+        # lbg = 0, ubg = 0 enforces strict equality for the 'g' defined in setup_solver
+        lbg = [0.0, 0.0]
+        ubg = [0.0, 0.0]
+
         x0 = [0.0] * 5
 
         # Solve
         try:
-            sol = self.solver(x0=x0, p=p_val, lbx=lbx, ubx=ubx)
+            sol = self.solver(x0=x0, p=p_val, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
             u_opt = sol["x"].full().flatten()
             self.publish_control_cmd(u_opt)
         except Exception as e:
