@@ -12,12 +12,12 @@ from lauv_control_allocator.fin_model import FinModel
 
 class LAUVControlAllocator(Node):
     def __init__(self):
-        super().__init__('lauv_control_allocator')
+        super().__init__("lauv_control_allocator")
 
-        # --- 1. Parameter Setup ---
+        # --- Parameter Setup ---
         # Physical constraints
         self.max_fin_angle = np.radians(45.0)  # +/- 45 degrees
-        self.max_thrust = 50.0                 # Max Newtons
+        self.max_thrust = 50.0  # Max Newtons
         self.min_thrust = -50.0
 
         # Allocation Tuning
@@ -27,55 +27,61 @@ class LAUVControlAllocator(Node):
         self.current_velocity = 0.0
         self.target_wrench = np.zeros(6)  # [Fx, Fy, Fz, Tx, Ty, Tz]
 
-        # --- 2. Actuator Setup ---
+        # --- Actuator Setup ---
         self.fins = []
 
         # Geometry Constants (approximate lever arms from center of gravity)
-        x_off = -0.5    # Fins are 0.5m behind CoG
+        x_off = -0.5  # Fins are 0.5m behind CoG
         fin_dist = 0.15  # Fins are 15cm from center line
 
-        # Fin 0: TOP (Vertical) -> Controls YAW
-        self.fins.append(FinModel(
-            0,
-            np.array([x_off, 0.0, fin_dist]),
-            np.array([0., 0., 0., 1.]),
-            '/model/lauv/joint/fin_0_joint/cmd_pos',
-            self
-        ))
+        # fin_0: TOP (Vertical) -> Controls YAW
+        self.fins.append(
+            FinModel(
+                0,
+                np.array([x_off, 0.0, fin_dist]),
+                np.array([0.0, 0.0, 0.0, 1.0]),
+                "/model/lauv/joint/fin_0_joint/cmd_pos",
+                self,
+            )
+        )
 
-        # Fin 1: RIGHT (Horizontal) -> Controls PITCH
+        # fin_1: RIGHT (Horizontal) -> Controls PITCH
         q_horz = tf_transformations.quaternion_from_euler(1.57, 0, 0)
-        self.fins.append(FinModel(
-            1,
-            np.array([x_off, -fin_dist, 0.0]),
-            q_horz,
-            '/model/lauv/joint/fin_1_joint/cmd_pos',
-            self
-        ))
+        self.fins.append(
+            FinModel(
+                1,
+                np.array([x_off, -fin_dist, 0.0]),
+                q_horz,
+                "/model/lauv/joint/fin_1_joint/cmd_pos",
+                self,
+            )
+        )
 
-        # Fin 2: BOTTOM (Vertical) -> Controls YAW
-        self.fins.append(FinModel(
-            2,
-            np.array([x_off, 0.0, -fin_dist]),
-            np.array([0., 0., 0., 1.]),
-            '/model/lauv/joint/fin_2_joint/cmd_pos',
-            self
-        ))
+        # fin_2: BOTTOM (Vertical) -> Controls YAW
+        self.fins.append(
+            FinModel(
+                2,
+                np.array([x_off, 0.0, -fin_dist]),
+                np.array([0.0, 0.0, 0.0, 1.0]),
+                "/model/lauv/joint/fin_2_joint/cmd_pos",
+                self,
+            )
+        )
 
-        # Fin 3: LEFT (Horizontal) -> Controls PITCH
-        self.fins.append(FinModel(
-            3,
-            np.array([x_off, fin_dist, 0.0]),
-            q_horz,
-            '/model/lauv/joint/fin_3_joint/cmd_pos',
-            self
-        ))
+        # fin_3: LEFT (Horizontal) -> Controls PITCH
+        self.fins.append(
+            FinModel(
+                3,
+                np.array([x_off, fin_dist, 0.0]),
+                q_horz,
+                "/model/lauv/joint/fin_3_joint/cmd_pos",
+                self,
+            )
+        )
 
         # Thruster Publisher
         self.thruster_pub = self.create_publisher(
-            Float64,
-            '/model/lauv/joint/thruster_0_joint/cmd_thrust',
-            10
+            Float64, "/model/lauv/joint/thruster_0_joint/cmd_thrust", 10
         )
 
         # --- 3. CasADi Solver Setup ---
@@ -83,20 +89,22 @@ class LAUVControlAllocator(Node):
 
         # --- 4. ROS Subscriptions ---
         self.wrench_sub = self.create_subscription(
-            Wrench, '/lauv/wrench_command', self.wrench_callback, 10)
+            Wrench, "/lauv/wrench_command", self.wrench_callback, 10
+        )
 
         self.odom_sub = self.create_subscription(
-            Odometry, '/lauv/odometry', self.velocity_callback, 10)
+            Odometry, "/lauv/odometry", self.velocity_callback, 10
+        )
 
         # Timer loop
         self.timer = self.create_timer(self.control_rate, self.allocate)
 
-        self.get_logger().info('Control Allocator Node Initialized')
+        self.get_logger().info("Control Allocator Node Initialized")
 
     def setup_solver(self):
         """Build the symbolic CasADi optimization problem."""
-        self.u = ca.SX.sym('u', 5)  # [fin0, fin1, fin2, fin3, thruster]
-        self.p = ca.SX.sym('p', 7)  # [Fx_des, ... Tz_des, velocity]
+        self.u = ca.SX.sym("u", 5)  # [fin0, fin1, fin2, fin3, thruster]
+        self.p = ca.SX.sym("p", 7)  # [Fx_des, ... Tz_des, velocity]
         tau_des = self.p[0:6]
         velocity = self.p[6]
 
@@ -134,16 +142,22 @@ class LAUVControlAllocator(Node):
         error = total_wrench - tau_des
         cost = ca.mtimes([error.T, W, error]) + ca.mtimes([self.u.T, R_reg, self.u])
 
-        nlp = {'x': self.u, 'p': self.p, 'f': cost}
-        opts = {'ipopt.print_level': 0, 'print_time': 0, 'ipopt.sb': 'yes'}
-        self.solver = ca.nlpsol('S', 'ipopt', nlp, opts)
+        nlp = {"x": self.u, "p": self.p, "f": cost}
+        opts = {"ipopt.print_level": 0, "print_time": 0, "ipopt.sb": "yes"}
+        self.solver = ca.nlpsol("S", "ipopt", nlp, opts)
 
     def wrench_callback(self, msg):
         """Store the desired Wrench (Force/Torque)."""
-        self.target_wrench = np.array([
-            msg.force.x, msg.force.y, msg.force.z,
-            msg.torque.x, msg.torque.y, msg.torque.z
-        ])
+        self.target_wrench = np.array(
+            [
+                msg.force.x,
+                msg.force.y,
+                msg.force.z,
+                msg.torque.x,
+                msg.torque.y,
+                msg.torque.z,
+            ]
+        )
 
     def velocity_callback(self, msg):
         """Store current forward speed (u) from Odometry."""
@@ -165,7 +179,7 @@ class LAUVControlAllocator(Node):
         # Solve
         try:
             sol = self.solver(x0=x0, p=p_val, lbx=lbx, ubx=ubx)
-            u_opt = sol['x'].full().flatten()
+            u_opt = sol["x"].full().flatten()
             self.publish_control_cmd(u_opt)
         except Exception as e:
             self.get_logger().error(f"Solver failed: {e}")
@@ -190,5 +204,5 @@ def main(args=None):
     rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
