@@ -84,10 +84,10 @@ class LAUVControlAllocator(Node):
             Float64, "/model/lauv/joint/thruster_0_joint/cmd_thrust", 10
         )
 
-        # --- 3. CasADi Solver Setup ---
+        # --- CasADi Solver Setup ---
         self.setup_solver()
 
-        # --- 4. ROS Subscriptions ---
+        # --- ROS Subscriptions ---
         self.wrench_sub = self.create_subscription(
             WrenchStamped, "/lauv/wrench_command", self.wrench_callback, 10
         )
@@ -109,30 +109,27 @@ class LAUVControlAllocator(Node):
         velocity = self.p[6]
 
         total_wrench = ca.SX.zeros(6)
-        total_wrench[0] += self.u[4]  # Add Thruster Force
+        total_wrench[0] += self.u[4]  # Thruster Force X
 
         rho = 1000.0
         fin_area = 0.005
 
         for i, fin in enumerate(self.fins):
             delta = self.u[i]
-            # Lift = 0.5 * rho * v^2 * Area * CL_slope * angle
+            # Lift & Drag Model
             lift_mag = 0.5 * rho * (velocity**2) * fin_area * 5.0 * delta
-            # Drag = 0.5 * rho * v^2 * Area * Cd
             drag_mag = 0.5 * rho * (velocity**2) * fin_area * 0.1
 
-            # Force in Fin Frame (-Drag, Lift, 0)
             f_fin = ca.vertcat(-drag_mag, lift_mag, 0)
 
-            # Rotate to Body Frame
+            # Rotate to Body
             R_num = fin.R.tolist()
             R_ca = ca.DM(R_num)
             f_body = ca.mtimes(R_ca, f_fin)
 
-            # Torque = r x f
+            # Torque
             r_ca = ca.DM(fin.pos.tolist())
             t_body = ca.cross(r_ca, f_body)
-
             total_wrench += ca.vertcat(f_body, t_body)
 
         # Cost Function
@@ -142,17 +139,14 @@ class LAUVControlAllocator(Node):
         error = total_wrench - tau_des
         cost = ca.mtimes([error.T, W, error]) + ca.mtimes([self.u.T, R_reg, self.u])
 
-        # g(u) = 0
-        # 1. Fin0 + Fin2 = 0  => Fin2 = -Fin0
-        # 2. Fin1 + Fin3 = 0  => Fin3 = -Fin1
-        g = ca.vertcat(self.u[0] + self.u[2], self.u[1] + self.u[3])
-
-        nlp = {"x": self.u, "p": self.p, "f": cost, "g": g}
+        nlp = {"x": self.u, "p": self.p, "f": cost}
         opts = {"ipopt.print_level": 0, "print_time": 0, "ipopt.sb": "yes"}
         self.solver = ca.nlpsol("S", "ipopt", nlp, opts)
 
     def wrench_callback(self, msg):
         """Store the desired Wrench (Force/Torque)."""
+        # DEBUG: Log received wrench
+        # self.get_logger().info(f"Received Wrench Command: {msg.wrench}")
         self.target_wrench = np.array(
             [
                 msg.wrench.force.x,
@@ -171,7 +165,14 @@ class LAUVControlAllocator(Node):
     def allocate(self):
         """Run the optimization and publish commands."""
         # Safety: If speed is too low, solver might act weird or fins do nothing
-        safe_velocity = max(abs(self.current_velocity), 0.1)
+        safe_velocity = self.current_velocity
+        if abs(safe_velocity) < 0.1:
+            safe_velocity = 1.0
+
+        # check
+        if np.linalg.norm(self.target_wrench) < 0.01:
+            self.publish_control_cmd(np.zeros(5))
+            return
 
         # Prepare Inputs
         p_val = np.concatenate((self.target_wrench, [safe_velocity]))
@@ -179,16 +180,28 @@ class LAUVControlAllocator(Node):
         # Constraints (Bounds)
         lbx = [-self.max_fin_angle] * 4 + [self.min_thrust]
         ubx = [self.max_fin_angle] * 4 + [self.max_thrust]
-        # lbg = 0, ubg = 0 enforces strict equality for the 'g' defined in setup_solver
-        lbg = [0.0, 0.0]
-        ubg = [0.0, 0.0]
 
         x0 = [0.0] * 5
 
         # Solve
         try:
-            sol = self.solver(x0=x0, p=p_val, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
+            sol = self.solver(x0=x0, p=p_val, lbx=lbx, ubx=ubx)
             u_opt = sol["x"].full().flatten()
+
+            # --- DEBUG BLOCK (Remove later) ---
+            self.get_logger().info(f"Target Wrench: {self.target_wrench}")
+            self.get_logger().info(
+                f"Solver Output: Thrust={u_opt[4]:.2f}, Fin0={u_opt[0]:.2f}"
+            )
+
+            # print out each fin angle
+            for i in range(4):
+                self.get_logger().info(f"Fin{i} Angle: {u_opt[i]:.2f}")
+            # ----------------------------------
+
+            # flip fin angles for correct direction
+            # u_opt[0] = -u_opt[0]
+            # u_opt[1] = -u_opt[1]
             self.publish_control_cmd(u_opt)
         except Exception as e:
             self.get_logger().error(f"Solver failed: {e}")
