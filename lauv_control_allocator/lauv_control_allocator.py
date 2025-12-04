@@ -35,45 +35,48 @@ class LAUVControlAllocator(Node):
         fin_dist = 0.15  # Fins are 15cm from center line
 
         # fin_0: TOP (Vertical) -> Controls YAW
+        q_top = tf_transformations.quaternion_from_euler(0, 0, 0)
         self.fins.append(
             FinModel(
                 0,
                 np.array([x_off, 0.0, fin_dist]),
-                np.array([0.0, 0.0, 0.0, 1.0]),
+                q_top,
                 "/model/lauv/joint/fin_0_joint/cmd_pos",
                 self,
             )
         )
 
         # fin_1: RIGHT (Horizontal) -> Controls PITCH
-        q_horz = tf_transformations.quaternion_from_euler(1.57, 0, 0)
+        q_right = tf_transformations.quaternion_from_euler(1.5708, 0, 0)
         self.fins.append(
             FinModel(
                 1,
                 np.array([x_off, -fin_dist, 0.0]),
-                q_horz,
+                q_right,
                 "/model/lauv/joint/fin_1_joint/cmd_pos",
                 self,
             )
         )
 
         # fin_2: BOTTOM (Vertical) -> Controls YAW
+        q_bottom = tf_transformations.quaternion_from_euler(3.14159, 0, 0)
         self.fins.append(
             FinModel(
                 2,
                 np.array([x_off, 0.0, -fin_dist]),
-                np.array([0.0, 0.0, 0.0, 1.0]),
+                q_bottom,
                 "/model/lauv/joint/fin_2_joint/cmd_pos",
                 self,
             )
         )
 
         # fin_3: LEFT (Horizontal) -> Controls PITCH
+        q_left = tf_transformations.quaternion_from_euler(-1.5708, 0, 0)
         self.fins.append(
             FinModel(
                 3,
                 np.array([x_off, fin_dist, 0.0]),
-                q_horz,
+                q_left,
                 "/model/lauv/joint/fin_3_joint/cmd_pos",
                 self,
             )
