@@ -47,7 +47,7 @@ class LAUVControlAllocator(Node):
         )
 
         # fin_1: RIGHT (Horizontal) -> Controls PITCH
-        q_right = tf_transformations.quaternion_from_euler(1.5708, 0, 0)
+        q_right = tf_transformations.quaternion_from_euler(-1.5708, 0, 0)
         self.fins.append(
             FinModel(
                 1,
@@ -71,7 +71,7 @@ class LAUVControlAllocator(Node):
         )
 
         # fin_3: LEFT (Horizontal) -> Controls PITCH
-        q_left = tf_transformations.quaternion_from_euler(-1.5708, 0, 0)
+        q_left = tf_transformations.quaternion_from_euler(1.5708, 0, 0)
         self.fins.append(
             FinModel(
                 3,
@@ -192,14 +192,14 @@ class LAUVControlAllocator(Node):
             u_opt = sol["x"].full().flatten()
 
             # --- DEBUG BLOCK (Remove later) ---
-            self.get_logger().info(f"Target Wrench: {self.target_wrench}")
-            self.get_logger().info(
-                f"Solver Output: Thrust={u_opt[4]:.2f}, Fin0={u_opt[0]:.2f}"
-            )
+            # self.get_logger().info(f"Target Wrench: {self.target_wrench}")
+            # self.get_logger().info(
+            #     f"Solver Output: Thrust={u_opt[4]:.2f}, Fin0={u_opt[0]:.2f}"
+            # )
 
-            # print out each fin angle
-            for i in range(4):
-                self.get_logger().info(f"Fin{i} Angle: {u_opt[i]:.2f}")
+            # # print out each fin angle
+            # for i in range(4):
+            #     self.get_logger().info(f"Fin{i} Angle: {u_opt[i]:.2f}")
             # ----------------------------------
 
             # flip fin angles for correct direction
