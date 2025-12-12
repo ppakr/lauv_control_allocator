@@ -47,7 +47,7 @@ class LAUVControlAllocator(Node):
         )
 
         # fin_1: RIGHT (Horizontal) -> Controls PITCH
-        q_right = tf_transformations.quaternion_from_euler(-1.5708, 0, 0)
+        q_right = tf_transformations.quaternion_from_euler(1.5708, 0, 0)
         self.fins.append(
             FinModel(
                 1,
@@ -71,7 +71,7 @@ class LAUVControlAllocator(Node):
         )
 
         # fin_3: LEFT (Horizontal) -> Controls PITCH
-        q_left = tf_transformations.quaternion_from_euler(1.5708, 0, 0)
+        q_left = tf_transformations.quaternion_from_euler(-1.5708, 0, 0)
         self.fins.append(
             FinModel(
                 3,
@@ -114,14 +114,16 @@ class LAUVControlAllocator(Node):
         total_wrench = ca.SX.zeros(6)
         total_wrench[0] += self.u[4]  # Thruster Force X
 
-        rho = 1000.0
-        fin_area = 0.005
+        rho = 1025.0
+        fin_area = 0.0244
+        fin_coeff_CL = 3.0
+        fin_coeff_CD = 1.98
 
         for i, fin in enumerate(self.fins):
             delta = self.u[i]
             # Lift & Drag Model
-            lift_mag = 0.5 * rho * (velocity**2) * fin_area * 5.0 * delta
-            drag_mag = 0.5 * rho * (velocity**2) * fin_area * 0.1
+            lift_mag = 0.5 * rho * (velocity**2) * fin_area * fin_coeff_CL * delta
+            drag_mag = 0.5 * rho * (velocity**2) * fin_area * fin_coeff_CD * delta
 
             f_fin = ca.vertcat(-drag_mag, lift_mag, 0)
 
@@ -136,8 +138,8 @@ class LAUVControlAllocator(Node):
             total_wrench += ca.vertcat(f_body, t_body)
 
         # Cost Function
-        W = ca.diag([10.0, 10.0, 10.0, 50.0, 50.0, 50.0])
-        R_reg = ca.diag([1.0, 1.0, 1.0, 1.0, 0.1])
+        W = ca.diag([10.0, 0.0, 0.0, 30.0, 30.0, 30.0])
+        R_reg = ca.diag([1.0, 1.0, 1.0, 1.0, 1.0])
 
         error = total_wrench - tau_des
         cost = ca.mtimes([error.T, W, error]) + ca.mtimes([self.u.T, R_reg, self.u])
